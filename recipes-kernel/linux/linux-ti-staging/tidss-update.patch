@@ -1,0 +1,142 @@
+diff --git a/drivers/gpu/drm/tidss/tidss_crtc.c b/drivers/gpu/drm/tidss/tidss_crtc.c
+index da89fd01c337..6898f12bb364 100644
+--- a/drivers/gpu/drm/tidss/tidss_crtc.c
++++ b/drivers/gpu/drm/tidss/tidss_crtc.c
+@@ -286,11 +286,13 @@ static void tidss_crtc_atomic_enable(struct drm_crtc *crtc,
+ 
+ 	dispc_vp_prepare(tidss->dispc, tcrtc->hw_videoport, crtc->state);
+ 
+-	dispc_vp_enable(tidss->dispc, tcrtc->hw_videoport, crtc->state);
+-
+ 	spin_lock_irqsave(&ddev->event_lock, flags);
+-
++	dispc_vp_enable(tidss->dispc, tcrtc->hw_videoport);
+ 	if (crtc->state->event) {
++		unsigned int pipe = drm_crtc_index(crtc);
++		struct drm_vblank_crtc *vblank = &ddev->vblank[pipe];
++
++		vblank->time = ktime_get();
+ 		drm_crtc_send_vblank_event(crtc, crtc->state->event);
+ 		crtc->state->event = NULL;
+ 	}
+@@ -554,4 +556,4 @@ struct tidss_crtc *tidss_crtc_create(struct drm_device *ddev, u32 hw_videoport)
+ 		drm_mode_crtc_set_gamma_size(crtc, gamma_lut_size);
+ 
+ 	return tcrtc;
+-}
++}
+\ No newline at end of file
+
+diff --git a/drivers/gpu/drm/tidss/tidss_dispc.c b/drivers/gpu/drm/tidss/tidss_dispc.c
+index 7c8c15a5c39b..d4762410d262 100644
+--- a/drivers/gpu/drm/tidss/tidss_dispc.c
++++ b/drivers/gpu/drm/tidss/tidss_dispc.c
+@@ -1311,6 +1311,9 @@ void dispc_vp_prepare(struct dispc_device *dispc, u32 hw_videoport,
+ {
+ 	const struct tidss_crtc_state *tstate = to_tidss_crtc_state(state);
+ 	const struct dispc_bus_format *fmt;
++	const struct drm_display_mode *mode = &state->adjusted_mode;
++	bool align, onoff, rf, ieo, ipc, ihs, ivs;
++	u32 hsw, hfp, hbp, vsw, vfp, vbp;
+ 
+ 	fmt = dispc_vp_find_bus_fmt(dispc, hw_videoport, tstate->bus_format,
+ 				    tstate->bus_flags);
+@@ -1323,23 +1326,7 @@ void dispc_vp_prepare(struct dispc_device *dispc, u32 hw_videoport,
+ 
+ 		dispc_enable_oldi(dispc, hw_videoport, fmt);
+ 	}
+-}
+-
+-void dispc_vp_enable(struct dispc_device *dispc, u32 hw_videoport,
+-		     const struct drm_crtc_state *state)
+-{
+-	const struct drm_display_mode *mode = &state->adjusted_mode;
+-	const struct tidss_crtc_state *tstate = to_tidss_crtc_state(state);
+-	bool align, onoff, rf, ieo, ipc, ihs, ivs;
+-	const struct dispc_bus_format *fmt;
+-	u32 hsw, hfp, hbp, vsw, vfp, vbp;
+-
+-	fmt = dispc_vp_find_bus_fmt(dispc, hw_videoport, tstate->bus_format,
+-				    tstate->bus_flags);
+-
+-	if (WARN_ON(!fmt))
+-		return;
+-
++	/* Move timing/polarity/size setup into prepare */
+ 	dispc_set_num_datalines(dispc, hw_videoport, fmt->data_width);
+ 
+ 	hfp = mode->crtc_hsync_start - mode->crtc_hdisplay;
+@@ -1351,14 +1338,14 @@ void dispc_vp_enable(struct dispc_device *dispc, u32 hw_videoport,
+ 	vbp = mode->crtc_vtotal - mode->crtc_vsync_end;
+ 
+ 	dispc_vp_write(dispc, hw_videoport, DISPC_VP_TIMING_H,
+-		       FLD_VAL(hsw - 1, 7, 0) |
+-		       FLD_VAL(hfp - 1, 19, 8) |
+-		       FLD_VAL(hbp - 1, 31, 20));
++			   FLD_VAL(hsw - 1, 7, 0) |
++			   FLD_VAL(hfp - 1, 19, 8) |
++			   FLD_VAL(hbp - 1, 31, 20));
+ 
+ 	dispc_vp_write(dispc, hw_videoport, DISPC_VP_TIMING_V,
+-		       FLD_VAL(vsw - 1, 7, 0) |
+-		       FLD_VAL(vfp, 19, 8) |
+-		       FLD_VAL(vbp, 31, 20));
++			   FLD_VAL(vsw - 1, 7, 0) |
++			   FLD_VAL(vfp, 19, 8) |
++			   FLD_VAL(vbp, 31, 20));
+ 
+ 	ivs = !!(mode->flags & DRM_MODE_FLAG_NVSYNC);
+ 
+@@ -1381,18 +1368,21 @@ void dispc_vp_enable(struct dispc_device *dispc, u32 hw_videoport,
+ 		ieo = false;
+ 
+ 	dispc_vp_write(dispc, hw_videoport, DISPC_VP_POL_FREQ,
+-		       FLD_VAL(align, 18, 18) |
+-		       FLD_VAL(onoff, 17, 17) |
+-		       FLD_VAL(rf, 16, 16) |
+-		       FLD_VAL(ieo, 15, 15) |
+-		       FLD_VAL(ipc, 14, 14) |
+-		       FLD_VAL(ihs, 13, 13) |
+-		       FLD_VAL(ivs, 12, 12));
++			   FLD_VAL(align, 18, 18) |
++			   FLD_VAL(onoff, 17, 17) |
++			   FLD_VAL(rf, 16, 16) |
++			   FLD_VAL(ieo, 15, 15) |
++			   FLD_VAL(ipc, 14, 14) |
++			   FLD_VAL(ihs, 13, 13) |
++			   FLD_VAL(ivs, 12, 12));
+ 
+ 	dispc_vp_write(dispc, hw_videoport, DISPC_VP_SIZE_SCREEN,
+-		       FLD_VAL(mode->crtc_hdisplay - 1, 11, 0) |
+-		       FLD_VAL(mode->crtc_vdisplay - 1, 27, 16));
++			   FLD_VAL(mode->crtc_hdisplay - 1, 11, 0) |
++			   FLD_VAL(mode->crtc_vdisplay - 1, 27, 16));
++}
+ 
++void dispc_vp_enable(struct dispc_device *dispc, u32 hw_videoport)
++{
+ 	VP_REG_FLD_MOD(dispc, hw_videoport, DISPC_VP_CONTROL, 1, 0, 0);
+ }
+ 
+@@ -3543,4 +3533,4 @@ void tidss_dispc_remove(struct platform_device *pdev)
+ 	pm_runtime_put_noidle(dispc->dev);
+ 
+ 	dispc->tidss->boot_enabled_vp_mask = 0;
+-}
++}
+\ No newline at end of file
+
+diff --git a/drivers/gpu/drm/tidss/tidss_dispc.h b/drivers/gpu/drm/tidss/tidss_dispc.h
+index 60c1b400eb89..f38493a70122 100644
+--- a/drivers/gpu/drm/tidss/tidss_dispc.h
++++ b/drivers/gpu/drm/tidss/tidss_dispc.h
+@@ -114,8 +114,7 @@ void dispc_ovr_enable_layer(struct dispc_device *dispc,
+ 
+ void dispc_vp_prepare(struct dispc_device *dispc, u32 hw_videoport,
+ 		      const struct drm_crtc_state *state);
+-void dispc_vp_enable(struct dispc_device *dispc, u32 hw_videoport,
+-		     const struct drm_crtc_state *state);
++void dispc_vp_enable(struct dispc_device *dispc, u32 hw_videoport);
+ void dispc_vp_disable(struct dispc_device *dispc, u32 hw_videoport);
+ void dispc_vp_unprepare(struct dispc_device *dispc, u32 hw_videoport);
+ bool dispc_vp_go_busy(struct dispc_device *dispc, u32 hw_videoport);

@@ -1,0 +1,18 @@
+before ::
+root@am62xx-evm:~# dmesg |grep tidss
+[   18.433439] [drm] Initialized tidss 1.0.0 for 30200000.dss on minor 0
+[   18.442217] tidss 30200000.dss: [drm] Cannot find any crtc or sizes
+[   18.451215] tidss 30200000.dss: [drm] Cannot find any crtc or sizes
+after patch:
+root@am62xx-evm:~# dmesg |grep weston
+[   50.997802] audit: type=1300 audit(1748545398.092:20): arch=c00000b7 syscall=64 success=yes exit=4 a0=8 a1=ffffd520b8a8 a2=4 a3=3fffed41c398c items=0 ppid=1 pid=956 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=tty7 ses=3 comm="(weston)" exe="/usr/lib/systemd/systemd-executor" subj=kernel key=(null)
+[   51.026514] audit: type=1327 audit(1748545398.092:20): proctitle="(weston)"
+root@am62xx-evm:~# dmesg |grep tidss 
+[   13.865992] [drm] Initialized tidss 1.0.0 for 30200000.dss on minor 0
+[   13.983427] tidss 30200000.dss: [drm] fb0: tidssdrmfb frame buffer device
+root@am62xx-evm:~# dmesg |grep drm   
+[    5.675919] systemd[1]: Starting Load Kernel Module drm...
+[   13.865992] [drm] Initialized tidss 1.0.0 for 30200000.dss on minor 0
+[   13.983427] tidss 30200000.dss: [drm] fb0: tidssdrmfb frame buffer device
+[   14.484903] [drm] Initialized pvr 24.2.6643903 for fd00000.gpu on minor 1
+
